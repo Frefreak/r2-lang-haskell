@@ -2,7 +2,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-extern void test_func(void);
+extern void init_ghci(void);
+extern void fini_ghci(void);
+extern void prompt(HsPtr a1);
 #ifdef __cplusplus
 }
 #endif

@@ -6,6 +6,7 @@
 int init(RLang *user)
 {
 	hs_init(0, 0);
+	init_ghci();
 	return R_TRUE;
 }
 
@@ -17,17 +18,26 @@ bool setup(RLang *user)
 
 int fini(RLang *user)
 {
+	fini_ghci();
+	hs_exit();
 	return R_TRUE;
 }
 
-int prompt(RLang *user)
+int prompt_wrapper(RLang *lang)
 {
+	prompt(lang->user);
 	return R_TRUE;
 }
 
 int run(RLang *user, const char *code, int len)
 {
-	eprintf("%s", code);
+	eprintf("%s\n", code);
+	return R_TRUE;
+}
+
+int run_file(RLang *user, const char *file)
+{
+	eprintf("%s\n", file);
 	return R_TRUE;
 }
 
@@ -41,9 +51,9 @@ RLangPlugin plugin_haskell = {
 	.init = &init,
 	.setup = &setup,
 	.fini = &fini,
-	.prompt = &prompt,
+	.prompt = &prompt_wrapper,
 	.run = &run,
-	.run_file = NULL,
+	.run_file = &run_file,
 	.set_argv = NULL
 };
 
