@@ -1,7 +1,7 @@
 GHC ?= stack exec -- ghc
 GHC_VERSION := $(shell $(GHC) --version | awk '{print $$NF}')
 RTS_LIB := HSrts-ghc$(GHC_VERSION)
-CFLAGS := $(shell pkg-config r_core r_lang --cflags) -Wall -Werror
+CFLAGS := $(shell pkg-config r_core r_lang --cflags) -Wall # -Werror
 LDFLAGS := -l$(RTS_LIB)
 
 all: lang_haskell.so

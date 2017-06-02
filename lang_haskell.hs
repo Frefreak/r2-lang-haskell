@@ -1,66 +1,69 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE Strict #-}
 
 module Plugin where
 
-import Language.Haskell.Ghcid
 import Control.Concurrent.MVar
+import Control.Concurrent
 import Control.Monad
 import System.IO
 import System.IO.Unsafe (unsafePerformIO)
 import Foreign.Ptr
-import Control.Concurrent
+import Foreign.C.String
+import Control.Monad.IO.Class
 
-foreign export ccall "init_ghci" initGhci :: IO ()
-foreign export ccall "fini_ghci" finiGhci :: IO ()
-foreign export ccall "prompt" prompt :: Ptr RCore -> IO ()
+import GHC
+import GHC.Paths
+import DynFlags
+
+foreign export ccall "hs_prompt" prompt :: Ptr RCore -> IO ()
 
 data RCore
 
-{-# NOINLINE ghciInstance #-}
-ghciInstance :: MVar Ghci
-ghciInstance = unsafePerformIO newEmptyMVar
-
-genericCallback :: Stream -> String -> IO ()
-genericCallback _ = putStrLn
-
-initGhci :: IO ()
-initGhci = do
-    let echooff _ _ = return ()
-    void $ forkIO $ do
-        (ghci, _) <- startGhci "stack exec -- ghci" Nothing echooff
-        putMVar ghciInstance ghci
-        putStrLn "initialized"
-
-finiGhci :: IO ()
-finiGhci = readMVar ghciInstance >>= stopGhci >> putStrLn "exited"
-
-recursiveGet :: MVar a -> IO a
-recursiveGet mvar = do
-    v <- tryReadMVar mvar
-    case v of
-        Just v' -> return v'
-        Nothing -> putStrLn "." >> threadDelay 500000 >> recursiveGet mvar
+{-# NOINLINE ghcSession #-}
+ghcSession :: MVar HscEnv
+ghcSession = unsafePerformIO newEmptyMVar
 
 prompt :: Ptr RCore -> IO ()
-prompt _ = do
-    ghci <- recursiveGet ghciInstance
-    outBuf <- hGetBuffering stdout
-    errBuf <- hGetBuffering stderr
-    hSetBuffering stdout NoBuffering
-    hSetBuffering stderr NoBuffering
-    promptLoop ghci
-    hSetBuffering stdout outBuf
-    hSetBuffering stderr errBuf
+prompt ptr = do
+    sess <- tryReadMVar ghcSession
+    -- lowest level code I ever wrote in Haskell
+    let addr = fromIntegral (ptrToIntPtr ptr)
+    newSess <- case sess of
+                Nothing -> putStrLn "realinit" >> realInit >>= repl addr
+                Just sess' -> putStrLn "normal init" >> repl addr sess'
+    _ <- tryTakeMVar ghcSession
+    putMVar ghcSession newSess
+    return ()
 
-promptLoop :: Ghci -> IO ()
-promptLoop ghci = do
-    b <- isEOF
-    unless b $ do
-        putStr "\ESC[32;1mλ> \ESC[0m"
-        {- hFlush stdout -}
-        {- hFlush stderr -}
-        l <- getLine
-        execStream ghci l genericCallback
-        promptLoop ghci
+realInit :: IO HscEnv
+realInit =
+    defaultErrorHandler defaultFatalMessager defaultFlushOut $
+        runGhc (Just libdir) $ do
+            dflags <- getSessionDynFlags
+            _ <- setSessionDynFlags dflags
+                    { hscTarget = HscInterpreted, ghcLink = LinkInMemory }
+            target <- guessTarget "R2.hs" Nothing
+            addTarget target
+            _ <- load LoadAllTargets
+            setContext $ map (IIDecl . simpleImportDecl . mkModuleName)
+                ["Prelude", "R2"]
+            getSession
+
+repl :: Int -> HscEnv -> IO HscEnv
+repl addr sess =
+    defaultErrorHandler defaultFatalMessager defaultFlushOut $
+        runGhc (Just libdir) $ do
+            setSession sess
+            _ <- execStmt ("dangerousInit " ++ show addr) execOptions
+            repl'
+            getSession
+
+repl' :: GhcMonad m => m ()
+repl' = do
+    l <- liftIO getLine
+    execStmt l execOptions
+    l <- liftIO getLine
+    execStmt l execOptions
+    l <- liftIO getLine
+    execStmt l execOptions
+    return ()

@@ -3,29 +3,26 @@
 #include "HsFFI.h"
 #include "lang_haskell_stub.h"
 
-int init(RLang *user)
+int init(RLang *lang)
 {
 	hs_init(0, 0);
-	init_ghci();
 	return R_TRUE;
 }
 
-bool setup(RLang *user)
+bool setup(RLang *lang)
 {
 	return R_TRUE;
 }
 
-
-int fini(RLang *user)
+int fini(RLang *lang)
 {
-	fini_ghci();
 	hs_exit();
 	return R_TRUE;
 }
 
-int prompt_wrapper(RLang *lang)
+int prompt(RLang *lang)
 {
-	prompt(lang->user);
+	hs_prompt(lang->user);
 	return R_TRUE;
 }
 
@@ -51,7 +48,7 @@ RLangPlugin plugin_haskell = {
 	.init = &init,
 	.setup = &setup,
 	.fini = &fini,
-	.prompt = &prompt_wrapper,
+	.prompt = &prompt,
 	.run = &run,
 	.run_file = &run_file,
 	.set_argv = NULL
